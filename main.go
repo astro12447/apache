@@ -77,9 +77,6 @@ func handlerData(w http.ResponseWriter, r *http.Request) {
 		data := functions.SortSlice(filesData, rootParam, sortParam)
 		//Эта структура,  содержит информацию о файлах и времени, затраченном на их обработку.
 		info := functions.Info{Files: data, Elapsedtime: elapsed, PathName: Root.Name}
-		for _, item := range info.Files {
-			fmt.Println(item.Name, item.SizeInKB, "0")
-		}
 		//Функция вычисляет общий размер файлов в срезе и возвращает его. Результат присваивается переменной sum.
 		totalSize := functions.Sum(info.Files)
 		// структура, содержит информацию о пути, затраченном времени и общем размере файлов.
@@ -89,40 +86,31 @@ func handlerData(w http.ResponseWriter, r *http.Request) {
 		var wg sync.WaitGroup // WaitGroup для ожидания завершения всех горутин
 		wg.Add(2)             //Добавяем 2 в WaitGroup, чтобы учесть две горутины.
 		//Запускаем две горутины
-		stat := Stat{
-			Field1: "value1",
-			Field2: "value2",
-		}
 		go sendJSONResponse(w, r, info, &wg)
-		go sendRequestToApache(stat, &wg)
+		go sendRequestToApache(InfoPath, &wg)
 		wg.Wait() //Подождем, пока все горутины завершатся.
 	}
 }
 
-type Stat struct {
-	Field1 string `json:"field1"`
-	Field2 string `json:"field2"`
-}
+// Предполагая, что function.Stat определен где-то в вашей кодовой базе.
 
-// Assuming functions.Stat is defined somewhere in your codebase
-
-func sendRequestToApache(stat Stat, wg *sync.WaitGroup) error {
+func sendRequestToApache(stat functions.Stat, wg *sync.WaitGroup) error {
 	defer wg.Done()
 
-	// Marshal the Stat struct into JSON
+	// Маршалируем структуру Stat в JSON
 	jsonData, err := json.Marshal(stat)
 	if err != nil {
 		return err
 	}
 
-	// Create a new POST request with the JSON data
-	req, err := http.NewRequest("POST", "http://localhost:80/insert.php", bytes.NewBuffer(jsonData))
+	// Создаем новый POST-запрос с данными JSON
+	req, err := http.NewRequest("POST", "http://localhost/insert.php", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	// Create an HTTP client and send the request
+	// Создаем HTTP-клиент и отправляем запрос
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -130,9 +118,9 @@ func sendRequestToApache(stat Stat, wg *sync.WaitGroup) error {
 	}
 	defer resp.Body.Close()
 
-	// Check the response status code
+	// Проверяем код статуса ответа
 	if resp.StatusCode != http.StatusOK {
-		// Read the response body as text
+		// Читаем тело ответа как текст
 		bodyText, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			return fmt.Errorf("failed to read response body: %v", err)
@@ -151,13 +139,13 @@ func sendRequestToApache(stat Stat, wg *sync.WaitGroup) error {
 		}
 	}
 
-	// Read the entire response body into memory
+	// Читаем тело ответа как текст
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 
-	// If you expect a JSON response, you can unmarshal it here
+	// Если мы ожидаем ответа в формате JSON, мы можем демаршалировать его здесь.
 	var responseData struct {
 		Message string `json:"message"`
 		Error   string `json:"error"`
@@ -167,12 +155,12 @@ func sendRequestToApache(stat Stat, wg *sync.WaitGroup) error {
 		return err
 	}
 
-	// Check for errors in the response
+	// Проверяем на наличие ошибок в ответе
 	if responseData.Error != "" {
 		return fmt.Errorf("server error: %s", responseData.Error)
 	}
 
-	// Print the message from the response
+	// Распечатываем сообщение из ответа
 	if responseData.Message != "" {
 		fmt.Println(responseData.Message)
 	}

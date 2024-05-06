@@ -1,32 +1,32 @@
 <?php
-// Check if the request method is POST
+// Проверяем, является ли метод запроса POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    // If not a POST request, send an error response
-    http_response_code(405); // Method Not Allowed
+    // Если это не POST-запрос, мы отправляем ответ об ошибке.
+    http_response_code(405); // метод не разрешен
     echo json_encode(['error' => 'This endpoint only accepts POST requests.']);
     exit;
 }
 
-// Read the JSON data from the request body
+// Читаем данные JSON из тела запроса
 $jsonData = file_get_contents('php://input');
 
-// Decode the JSON data into an associative array
+// Декодируем данные JSON в ассоциативный массив
 $data = json_decode($jsonData, true);
 
-// Check if the JSON decode was successful
+// Проверяем, прошло ли декодирование JSON успешно
 if ($data === null) {
-    // Send an error response if the JSON is not valid
+    // мы отправляем ответ об ошибке, если JSON недействителен
     http_response_code(400);
     echo json_encode(['error' => 'Invalid JSON data']);
     exit;
 }
 
-// Assuming the JSON data contains fields 'field1' and 'field2'
-$field1 = $data['field1'] ?? null;
-$field2 = $data['field2'] ?? null;
+$PathName = $data['PathName'] ?? null;
+$Size = $data['Size'] ?? null;
+$Elapsedtime = $data['ElapsedTime'] ?? null;
 
-// Here you would typically process the data, 
-error_log("Received data: field1 = " . $field1 . ", field2 = " . $field2);
+// Здесь мы  обрабатываем данные, 
+error_log("Received data: PathName= " . $PathName . ", Size = " . $Size, ", Size = " . $ElapsedTime);
 
 /*
 $mysqli = new mysqli("localhost", "username", "password", "database");
@@ -36,8 +36,8 @@ if ($mysqli->connect_errno) {
     exit;
 }
 
-$stmt = $mysqli->prepare("INSERT INTO STATISTICS (field1, field2) VALUES (?, ?)");
-$stmt->bind_param("ss", $field1, $field2);
+$stmt = $mysqli->prepare("INSERT INTO STITISTICS (C_PATHNAME, C_SIZE, C_ELAPSEDTIME) VALUES (?, ?)");
+$stmt->bind_param("sss", $PathName, $Size, $ElapsedTime);
 $stmt->execute();
 $stmt->close();
 $mysqli->close();
