@@ -1,12 +1,13 @@
 package main
 
 import (
+	_ "bufio"
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"functions/functions"
+	_ "io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -76,6 +77,9 @@ func handlerData(w http.ResponseWriter, r *http.Request) {
 		data := functions.SortSlice(filesData, rootParam, sortParam)
 		//Эта структура,  содержит информацию о файлах и времени, затраченном на их обработку.
 		info := functions.Info{Files: data, Elapsedtime: elapsed, PathName: Root.Name}
+		for _, item := range info.Files {
+			fmt.Println(item.Name, item.SizeInKB, "0")
+		}
 		//Функция вычисляет общий размер файлов в срезе и возвращает его. Результат присваивается переменной sum.
 		totalSize := functions.Sum(info.Files)
 		// структура, содержит информацию о пути, затраченном времени и общем размере файлов.
@@ -85,22 +89,40 @@ func handlerData(w http.ResponseWriter, r *http.Request) {
 		var wg sync.WaitGroup // WaitGroup для ожидания завершения всех горутин
 		wg.Add(2)             //Добавяем 2 в WaitGroup, чтобы учесть две горутины.
 		//Запускаем две горутины
+		stat := Stat{
+			Field1: "value1",
+			Field2: "value2",
+		}
 		go sendJSONResponse(w, r, info, &wg)
-		go sendRequestToApache(InfoPath, &wg)
+		go sendRequestToApache(stat, &wg)
 		wg.Wait() //Подождем, пока все горутины завершатся.
 	}
 }
-func sendRequestToApache(Statistics functions.Stat, wg *sync.WaitGroup) error {
+
+type Stat struct {
+	Field1 string `json:"field1"`
+	Field2 string `json:"field2"`
+}
+
+// Assuming functions.Stat is defined somewhere in your codebase
+
+func sendRequestToApache(stat Stat, wg *sync.WaitGroup) error {
 	defer wg.Done()
-	jsonData, err := json.Marshal(Statistics)
+
+	// Marshal the Stat struct into JSON
+	jsonData, err := json.Marshal(stat)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("POST", "http://localhost:80/", bytes.NewBuffer(jsonData))
+
+	// Create a new POST request with the JSON data
+	req, err := http.NewRequest("POST", "http://localhost:80/insert.php", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+
+	// Create an HTTP client and send the request
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -108,17 +130,34 @@ func sendRequestToApache(Statistics functions.Stat, wg *sync.WaitGroup) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
-		fmt.Println("Запрос успешен")
-	} else {
-		fmt.Println("Запрос не выполнен со статусом:", resp.Status)
+	// Check the response status code
+	if resp.StatusCode != http.StatusOK {
+		// Read the response body as text
+		bodyText, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read response body: %v", err)
+		}
+		// Handle different status codes here
+		switch resp.StatusCode {
+		case http.StatusInternalServerError:
+			return fmt.Errorf("internal server error: %s", bodyText)
+		case http.StatusBadRequest:
+			return fmt.Errorf("bad request: %s", bodyText)
+		case http.StatusMethodNotAllowed:
+			return fmt.Errorf("method not allowed: %s", bodyText)
+		// cases for other status codes as needed
+		default:
+			return fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, bodyText)
+		}
 	}
-	// Unmarshal the response body into a struct
-	// Read the response body
+
+	// Read the entire response body into memory
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
+
+	// If you expect a JSON response, you can unmarshal it here
 	var responseData struct {
 		Message string `json:"message"`
 		Error   string `json:"error"`
@@ -127,14 +166,17 @@ func sendRequestToApache(Statistics functions.Stat, wg *sync.WaitGroup) error {
 	if err != nil {
 		return err
 	}
-	// Process the responseData as needed
+
+	// Check for errors in the response
 	if responseData.Error != "" {
-		return errors.New(responseData.Error)
+		return fmt.Errorf("server error: %s", responseData.Error)
 	}
 
+	// Print the message from the response
 	if responseData.Message != "" {
 		fmt.Println(responseData.Message)
 	}
+
 	return nil
 }
 
@@ -169,6 +211,35 @@ func getServerPort() (string, error) {
 	return fmt.Sprintf(":%d", conf.Port), nil
 }
 func main() {
+	values := map[string]string{"key": "value"}
+	jsonData, err := json.Marshal(values)
+	if err != nil {
+		fmt.Println("Error marshalling JSON:", err)
+		return
+	}
+
+	// Print the JSON data to the console for debugging
+	fmt.Println("JSON data:", string(jsonData))
+
+	// Create a new POST request
+	url := "http://localhost/select.php" // Replace with your Apache server URL
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		fmt.Println("Error sending POST request:", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Read the response body
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("Error reading response body:", err)
+		return
+	}
+
+	// Print the response status and body
+	fmt.Println("Response Status:", resp.Status)
+	fmt.Println("Response Body:", string(body))
 	// // Создаем новый ServeMux для маршрутизации запросов
 	mux := http.NewServeMux()
 	// Обработчик для всех запросов
@@ -179,6 +250,7 @@ func main() {
 	mux.Handle("/", http.FileServer(http.Dir("./templates")))
 	mux.Handle("/templates/", http.StripPrefix("/templates/", http.FileServer(http.Dir("./templates"))))
 	mux.Handle("/dist/", http.StripPrefix("/dist/", http.FileServer(http.Dir("./dist"))))
+	//mux.Handle("/apache/", http.StripPrefix("/apache/", http.FileServer(http.Dir("./apache"))))
 	// Обернем ServeMux пользовательским обработчиком.
 	//path := "/Users/ismaelnvo/Desktop/"
 	//Root := functions.Root{Name: path}
